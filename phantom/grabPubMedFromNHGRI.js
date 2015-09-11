@@ -7,7 +7,8 @@ var script = (function () {
         url = 'https://research.nhgri.nih.gov/projects/bic/circos/cgi-bin/circos_query_result.cgi?CCS=all',
         stepIndex = 0;
     var fs = require('fs'),
-        filePath = '/Users/zhangh2/repos/oncokb-js-utils/phantom/data/pubMedInfo.txt';
+        filePath = '/Users/zhangh2/repos/oncokb-js-utils/phantom/data/pubMedInfo.txt',
+        csvFilePath = '/Users/zhangh2/repos/oncokb-js-utils/phantom/data/pubMedInfo.csv';
 
     /**
      * From PhantomJS documentation:
@@ -35,7 +36,7 @@ var script = (function () {
             console.log('============================================');
 
             // Inject jQuery for scraping (you need to save jquery-1.6.1.min.js in the same folder as this file)
-            page.injectJs('jquery-1.6.1.min.js');
+            page.injectJs('libs/jquery-1.6.1.min.js');
 
             // Our "event loop"
             if (!phantom.state) {
@@ -51,7 +52,7 @@ var script = (function () {
     });
 
     function initialize() {
-        var result = page.evaluate(function () {
+        var results = page.evaluate(function () {
             function Header() {
                 this.pubmed = '';
                 this.name = '';
@@ -62,7 +63,7 @@ var script = (function () {
                 this.pubmed = [];
             }
 
-            var headers = [], results = [];
+            var headers = [], content = [], data = {};
 
             //Find table header information
             $('table.styled tbody tr:nth-child(1) th').each(function () {
@@ -84,19 +85,83 @@ var script = (function () {
                 result.name = $(this).find('td:nth-child(4)').text();
                 $(this).find('td').each(function (i, e) {
                     if ($(this).text() === 'F') {
-                        result.pubmed.push(headers[i]);
+                        result.pubmed.push($.extend(true, {}, headers[i]));
                     }
                 });
                 if (result.pubmed.length > 0) {
-                    results.push(result);
+                    //console.log('---' + JSON.stringify(result) + '---');
+                    content.push(result);
+                }else{
+                    //console.log('***' + JSON.stringify(result) + '***');
                 }
             });
-            return results;
+
+            data.data = content;
+            data.header = headers;
+
+            // State is initially empty. State is persisted between page loads and can be used for identifying which page we're on.
+            console.log('============================================');
+            console.log(JSON.stringify(data));
+            console.log('============================================');
+
+            return data;
         });
-        fs.write(filePath, JSON.stringify(result), 'w');
+
+        // State is initially empty. State is persisted between page loads and can be used for identifying which page we're on.
+        console.log('============================================');
+        console.log('Got data');
+        console.log('============================================');
+
+        var pubMeds = [], resultStr=',';
+        results.header.forEach(function(e,i){
+            if(e.pubmed && pubMeds.indexOf(e.pubmed) === -1) {
+                pubMeds.push(e.pubmed);
+            }
+        });
+
+        resultStr += pubMeds.join(',') + '\n';
+
+        results.data.forEach(function(e,i){
+            var content = [];
+            content.push(e.name);
+            pubMeds.forEach(function(id, index){
+                content.push(containPubmed(id, e.pubmed)?'Y':'');
+            });
+            content.push('\n');
+            resultStr += content.join(',');
+        });
+
+        // State is initially empty. State is persisted between page loads and can be used for identifying which page we're on.
+        console.log('============================================');
+        console.log('Have string');
+        console.log('============================================');
+
+        fs.write(csvFilePath, resultStr, 'w');
+
+        // State is initially empty. State is persisted between page loads and can be used for identifying which page we're on.
+        console.log('============================================');
+        console.log('Saved');
+        console.log('============================================');
+        //fs.write(filePath, JSON.stringify(result), 'w');
         // Phantom state doesn't change between page reloads
         // We use the state to store the search result handler, ie. the next step
         phantom.state = parseResults;
+    }
+
+    function containPubmed(pubmed, array) {
+        if(array instanceof Array) {
+            var exist = false;
+
+            for(var i = 0; i < array.length; i++) {
+                if(array[i].pubmed && array[i].pubmed === pubmed) {
+                    exist = true;
+                    break;
+                }
+            }
+            return exist;
+        }else {
+            return false;
+        }
     }
 
     function parseResults() {
